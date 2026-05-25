@@ -305,6 +305,45 @@ let tabAtiva = '🍺 Bar';
 let searchTerm = '';
 let taxaAtiva = true;
 
+// ── PERSISTÊNCIA ──
+const LS_KEY = 'pdv_comandas';
+const LS_ACTIVE = 'pdv_comanda_ativa';
+
+function salvarComandas() {
+  try {
+    // Serializa Date objects para ISO strings
+    const serializaveis = {};
+    for (const [id, c] of Object.entries(comandas)) {
+      serializaveis[id] = { ...c, hora: c.hora instanceof Date ? c.hora.toISOString() : c.hora };
+    }
+    localStorage.setItem(LS_KEY, JSON.stringify(serializaveis));
+    localStorage.setItem(LS_ACTIVE, comandaAtiva || '');
+  } catch (e) { console.warn('Erro ao salvar comandas:', e); }
+}
+
+function carregarComandas() {
+  try {
+    const raw = localStorage.getItem(LS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      for (const [id, c] of Object.entries(parsed)) {
+        comandas[id] = { ...c, hora: new Date(c.hora) };
+      }
+    }
+    const active = localStorage.getItem(LS_ACTIVE);
+    if (active && comandas[active]) comandaAtiva = active;
+  } catch (e) { console.warn('Erro ao carregar comandas:', e); }
+}
+
+// Aviso antes de fechar/atualizar a aba com comandas abertas
+window.addEventListener('beforeunload', (e) => {
+  if (Object.keys(comandas).length > 0) {
+    salvarComandas();
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+
 // ── RELÓGIO ──
 function tick(){
   const n=new Date();
@@ -421,6 +460,7 @@ function criarComanda(){
   const id='c'+Date.now();
   comandas[id]={id,nome,hora:new Date(),itens:[],pagamentos:[]};
   fecharModal('modalNova');
+  salvarComandas();
   renderComandas();
   selecionarComanda(id);
   toast('Comanda "'+nome+'" aberta!','green');
@@ -452,7 +492,7 @@ function renderComandas(){
   }).join('');
 }
 
-function selecionarComanda(id){comandaAtiva=id;renderComandas();renderProdutos();}
+function selecionarComanda(id){comandaAtiva=id;salvarComandas();renderComandas();renderProdutos();}
 
 // ── ADICIONAR ITEM ──
 function addItem(prodId,nome,preco,tipo){
@@ -461,6 +501,7 @@ function addItem(prodId,nome,preco,tipo){
   const ex=c.itens.find(i=>i.id===prodId);
   if(ex)ex.qtd++;
   else c.itens.push({id:prodId,nome,preco:Number(preco),qtd:1,tipo});
+  salvarComandas();
   renderComandas();
   toast('+'+nome,'green');
 }
@@ -517,10 +558,12 @@ function altQtd(id,idx,d){
   const c=comandas[id];
   c.itens[idx].qtd+=d;
   if(c.itens[idx].qtd<=0)c.itens.splice(idx,1);
+  salvarComandas();
   renderDetalhe(id);renderComandas();
 }
 function delItem(id,idx){
   comandas[id].itens.splice(idx,1);
+  salvarComandas();
   renderDetalhe(id);renderComandas();
 }
 
@@ -547,6 +590,7 @@ function registrarParcial(){
   document.getElementById('inputParcial').value='';
   document.getElementById('creditoInfo').style.display='none';
   document.getElementById('debitoInfo').style.display='none';
+  salvarComandas();
   renderDetalhe(comandaAtiva);renderComandas();
   toast(`${fmt(val)} registrado!`,'green');
 }
@@ -676,8 +720,9 @@ async function confirmarFechamento(forma, valorOverride) {
   if(pago>0) obs += ` · Pago anteriormente: ${fmt(arred(pago))}`;
   if(credito>0) obs += ` · CRÉDITO: ${fmt(arred(credito))}`;
 
+  let sucesso = false;
   try {
-    const {data:ped} = await sb.from('pedidos').insert({
+    const {data:ped, error: pedErr} = await sb.from('pedidos').insert({
       numero: numPedido,
       cliente_nome: c.nome,
       cliente_whatsapp: '',
@@ -689,30 +734,42 @@ async function confirmarFechamento(forma, valorOverride) {
       observacoes: obs,
       status: 'pago',
     }).select().single();
+    if(pedErr) throw pedErr;
     if(ped){
-      await sb.from('pedido_itens').insert(c.itens.map(i=>({
+      const {error: itensErr} = await sb.from('pedido_itens').insert(c.itens.map(i=>({
         pedido_id: ped.id,
         produto_nome: i.nome,
         quantidade: i.qtd,
         preco_unitario: arred(i.preco),
         subtotal: arred(i.preco * i.qtd),
       })));
+      if(itensErr) throw itensErr;
     }
-  } catch(e) { console.warn('Erro PDV:', e); }
+    sucesso = true;
+  } catch(e) {
+    console.warn('Erro PDV:', e);
+    toast('❌ Erro ao salvar pedido no servidor. Comanda mantida aberta.','red');
+    return; // NÃO deleta a comanda — mantém aberta para tentar novamente
+  }
 
-  const msg = credito > 0
-    ? `✓ ${c.nome} · ${fmt(arred(total))} · Crédito: ${fmt(arred(credito))}`
-    : `✓ ${c.nome} · ${fmt(valorFinal)} · ${forma.toUpperCase()}`;
+  if(sucesso){
+    const msg = credito > 0
+      ? `✓ ${c.nome} · ${fmt(arred(total))} · Crédito: ${fmt(arred(credito))}`
+      : `✓ ${c.nome} · ${fmt(valorFinal)} · ${forma.toUpperCase()}`;
 
-  delete comandas[comandaAtiva];
-  fecharModal('modalComanda');
-  comandaAtiva = null;
-  renderComandas(); renderProdutos();
-  toast(msg, 'green');
+    const closedId = comandaAtiva;
+    delete comandas[closedId];
+    fecharModal('modalComanda');
+    comandaAtiva = null;
+    salvarComandas();
+    renderComandas(); renderProdutos();
+    toast(msg, 'green');
+  }
 }
 
 function fecharModal(id){document.getElementById(id).classList.remove('open');}
 setInterval(renderComandas,60000);
+carregarComandas();
 carregarProdutos();
 renderComandas();
 </script>
