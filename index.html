@@ -32,6 +32,23 @@
     .clock{font-size:10px;color:var(--dim);letter-spacing:0.1em;}
     .btn-nova{background:var(--gold);color:#000;border:none;padding:9px 18px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.15em;cursor:pointer;white-space:nowrap;}
     .btn-nova:hover{background:var(--gold2);}
+    .btn-balcao{background:transparent;color:var(--green);border:1px solid var(--green);padding:9px 18px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:700;letter-spacing:0.15em;cursor:pointer;white-space:nowrap;transition:all .2s;}
+    .btn-balcao:hover{background:rgba(74,222,128,.1);}
+    .btn-balcao.active{background:var(--green);color:#000;}
+
+    /* BALCÃO PANEL */
+    .balcao-header{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:var(--bg2);}
+    .balcao-header .panel-label{color:var(--green);}
+    .balcao-itens{flex:1;overflow-y:auto;}
+    .balcao-item{display:flex;align-items:center;gap:10px;padding:10px 18px;border-bottom:1px solid var(--line);}
+    .balcao-item-nome{flex:1;font-size:12px;}
+    .balcao-item-preco{font-family:'Cormorant Garamond',serif;font-size:16px;color:var(--gold);}
+    .balcao-footer{padding:14px 18px;border-top:1px solid var(--line);background:var(--bg2);flex-shrink:0;}
+    .balcao-total{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;}
+    .balcao-total-label{font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--dim);}
+    .balcao-total-valor{font-family:'Cormorant Garamond',serif;font-size:28px;color:var(--gold);}
+    .balcao-pay-btns{display:flex;gap:8px;}
+    .balcao-pay-btns button{flex:1;padding:10px;border:none;font-family:'JetBrains Mono',monospace;font-size:9px;font-weight:700;letter-spacing:0.1em;cursor:pointer;transition:all .2s;}
 
     /* MAIN */
     .main{display:grid;grid-template-columns:1fr var(--panel-w,360px);flex:1;overflow:hidden;}
@@ -166,17 +183,41 @@
     <div class="clock" id="clock"></div>
   </div>
   <button class="btn-nova" onclick="abrirNovaComanda()">+ NOVA COMANDA</button>
+  <button class="btn-balcao" onclick="toggleBalcao()" id="btnBalcao">🛒 BALCÃO</button>
 </header>
 
 <div class="main">
   <!-- COMANDAS -->
-  <div class="panel-left">
+  <div class="panel-left" id="panelComandas">
     <div class="panel-hd">
       <span class="panel-label">Comandas abertas</span>
       <span class="badge" id="totalComandas">0</span>
     </div>
     <div class="comandas-grid" id="comandasGrid">
       <div class="empty-msg"><h3>Nenhuma comanda aberta</h3><p>Clique em "+ NOVA COMANDA"</p></div>
+    </div>
+  </div>
+
+  <!-- BALCÃO -->
+  <div class="panel-left" id="panelBalcao" style="display:none;">
+    <div class="balcao-header">
+      <span class="panel-label">🛒 Venda Balcão</span>
+      <span class="badge" id="balcaoCount" style="background:var(--green);">0</span>
+    </div>
+    <div class="balcao-itens" id="balcaoItens">
+      <div class="empty-msg"><h3>Carrinho vazio</h3><p>Adicione produtos ao lado</p></div>
+    </div>
+    <div class="balcao-footer">
+      <div class="balcao-total">
+        <span class="balcao-total-label">TOTAL</span>
+        <span class="balcao-total-valor" id="balcaoTotal">R$ 0</span>
+      </div>
+      <div class="balcao-pay-btns">
+        <button style="background:var(--green);color:#000;" onclick="fecharBalcao('pix')">◆ PIX</button>
+        <button style="background:var(--blue);color:#000;" onclick="fecharBalcao('cartao')">▣ CARTÃO</button>
+        <button style="background:var(--orange);color:#000;" onclick="fecharBalcao('dinheiro')">$ DINHEIRO</button>
+      </div>
+      <button onclick="limparBalcao()" style="width:100%;margin-top:8px;padding:8px;background:transparent;color:var(--red);border:1px solid var(--red);font-family:'JetBrains Mono',monospace;font-size:9px;cursor:pointer;letter-spacing:0.1em;">LIMPAR CARRINHO</button>
     </div>
   </div>
 
@@ -304,6 +345,8 @@ let todosProds = [];
 let tabAtiva = '🍺 Bar';
 let searchTerm = '';
 let taxaAtiva = true;
+let balcaoAtivo = false;
+let balcaoItens = [];
 
 // ── PERSISTÊNCIA ──
 const LS_KEY = 'pdv_comandas';
@@ -343,6 +386,148 @@ window.addEventListener('beforeunload', (e) => {
     e.returnValue = '';
   }
 });
+
+// ── BALCÃO ──
+const LS_BALCAO = 'pdv_balcao';
+
+function toggleBalcao() {
+  balcaoAtivo = !balcaoAtivo;
+  document.getElementById('panelComandas').style.display = balcaoAtivo ? 'none' : '';
+  document.getElementById('panelBalcao').style.display = balcaoAtivo ? '' : 'none';
+  document.getElementById('btnBalcao').classList.toggle('active', balcaoAtivo);
+  if (balcaoAtivo) comandaAtiva = null;
+  renderBalcao();
+  renderProdutos();
+}
+
+function addItemBalcao(prodId, nome, preco, tipo) {
+  const ex = balcaoItens.find(i => i.id === prodId);
+  if (ex) ex.qtd++;
+  else balcaoItens.push({ id: prodId, nome, preco: Number(preco), qtd: 1, tipo });
+  salvarBalcao();
+  renderBalcao();
+  toast('+' + nome, 'green');
+}
+
+function altQtdBalcao(idx, d) {
+  balcaoItens[idx].qtd += d;
+  if (balcaoItens[idx].qtd <= 0) balcaoItens.splice(idx, 1);
+  salvarBalcao();
+  renderBalcao();
+}
+
+function delItemBalcao(idx) {
+  balcaoItens.splice(idx, 1);
+  salvarBalcao();
+  renderBalcao();
+}
+
+function limparBalcao() {
+  if (!balcaoItens.length) return;
+  if (!confirm('Limpar carrinho?')) return;
+  balcaoItens = [];
+  salvarBalcao();
+  renderBalcao();
+  toast('Carrinho limpo');
+}
+
+function calcTotalBalcao() {
+  const sub = arred(balcaoItens.reduce((s, i) => s + i.preco * i.qtd, 0));
+  const taxa = taxaAtiva ? arred(sub * 0.2) : 0;
+  const total = sub + taxa;
+  return { sub, taxa, total };
+}
+
+function renderBalcao() {
+  const count = balcaoItens.reduce((s, i) => s + i.qtd, 0);
+  document.getElementById('balcaoCount').textContent = count;
+
+  const el = document.getElementById('balcaoItens');
+  if (!balcaoItens.length) {
+    el.innerHTML = '<div class="empty-msg"><h3>Carrinho vazio</h3><p>Adicione produtos ao lado</p></div>';
+    document.getElementById('balcaoTotal').textContent = 'R$ 0';
+    return;
+  }
+
+  el.innerHTML = balcaoItens.map((item, idx) => `
+    <div class="balcao-item">
+      <div class="balcao-item-nome">${item.nome}</div>
+      <div class="qty-ctrl">
+        <button class="qty-btn" onclick="altQtdBalcao(${idx},-1)">−</button>
+        <span class="qty-n">${item.qtd}</span>
+        <button class="qty-btn" onclick="altQtdBalcao(${idx},1)">+</button>
+      </div>
+      <div class="balcao-item-preco">${fmt(item.preco * item.qtd)}</div>
+      <button class="btn-del" onclick="delItemBalcao(${idx})">×</button>
+    </div>
+  `).join('');
+
+  const { total } = calcTotalBalcao();
+  document.getElementById('balcaoTotal').textContent = fmt(total);
+}
+
+function salvarBalcao() {
+  try {
+    localStorage.setItem(LS_BALCAO, JSON.stringify(balcaoItens));
+  } catch (e) { console.warn('Erro ao salvar balcão:', e); }
+}
+
+function carregarBalcao() {
+  try {
+    const raw = localStorage.getItem(LS_BALCAO);
+    if (raw) balcaoItens = JSON.parse(raw);
+  } catch (e) { console.warn('Erro ao carregar balcão:', e); }
+}
+
+async function fecharBalcao(forma) {
+  if (!balcaoItens.length) { toast('Carrinho vazio!'); return; }
+  const { sub, taxa, total } = calcTotalBalcao();
+  const valorFinal = arred(total);
+  const numPedido = 'PDV' + Date.now().toString().slice(-8);
+
+  let obs = 'PDV · BALCÃO · ' + forma.toUpperCase();
+  if (taxaAtiva) obs += ` · Taxa 20%: ${fmt(taxa)}`;
+
+  let sucesso = false;
+  try {
+    const { data: ped, error: pedErr } = await sb.from('pedidos').insert({
+      numero: numPedido,
+      cliente_nome: 'Balcão',
+      cliente_whatsapp: '',
+      subtotal: arred(sub),
+      frete: 0,
+      total: arred(total),
+      forma_pagamento: forma,
+      tipo_entrega: 'retirada',
+      observacoes: obs,
+      status: 'pago',
+    }).select().single();
+    if (pedErr) throw pedErr;
+    if (ped) {
+      const { error: itensErr } = await sb.from('pedido_itens').insert(balcaoItens.map(i => ({
+        pedido_id: ped.id,
+        produto_nome: i.nome,
+        quantidade: i.qtd,
+        preco_unitario: arred(i.preco),
+        subtotal: arred(i.preco * i.qtd),
+      })));
+      if (itensErr) throw itensErr;
+    }
+    sucesso = true;
+  } catch (e) {
+    console.warn('Erro PDV Balcão:', e);
+    toast('❌ Erro ao salvar pedido. Carrinho mantido.', 'red');
+    return;
+  }
+
+  if (sucesso) {
+    const msg = `✓ Balcão · ${fmt(valorFinal)} · ${forma.toUpperCase()}`;
+    balcaoItens = [];
+    salvarBalcao();
+    renderBalcao();
+    toast(msg, 'green');
+  }
+}
 
 // ── RELÓGIO ──
 function tick(){
@@ -441,14 +626,17 @@ function renderProdutos(){
     items=LARICAS.filter(p=>p.cat===tabAtiva).map(p=>({...p,tipo:'l'}));
   }
   if(!items.length){lista.innerHTML='<div class="no-sel">Nenhum produto encontrado</div>';return;}
+  const canAdd = balcaoAtivo || comandaAtiva;
+  if(!canAdd){lista.innerHTML='<div class="no-sel">Selecione uma comanda ou ative o modo Balcão</div>';return;}
+  const addFn = balcaoAtivo ? 'addItemBalcao' : 'addItem';
   lista.innerHTML=items.map(p=>`
-    <div class="prod-item" onclick="addItem('${p.id}','${p.nome.replace(/'/g,"\\'")}',${p.preco},'${p.tipo}')">
+    <div class="prod-item" onclick="${addFn}('${p.id}','${p.nome.replace(/'/g,"\\'")}',${p.preco},'${p.tipo}')">
       <div class="prod-item-info">
         <div class="prod-item-nome">${p.nome}</div>
         ${p.cat?`<div class="prod-item-sub">${p.cat}</div>`:''}
       </div>
       <div class="prod-item-preco">${fmt(p.preco)}</div>
-      <button class="btn-add" ${!comandaAtiva?'disabled':''}>+</button>
+      <button class="btn-add" ${!canAdd?'disabled':''}>+</button>
     </div>`).join('');
 }
 
@@ -770,6 +958,7 @@ async function confirmarFechamento(forma, valorOverride) {
 function fecharModal(id){document.getElementById(id).classList.remove('open');}
 setInterval(renderComandas,60000);
 carregarComandas();
+carregarBalcao();
 carregarProdutos();
 renderComandas();
 </script>
