@@ -149,8 +149,11 @@
 
     /* Histórico de pagamentos parciais */
     .pagamentos-lista{margin-top:8px;}
-    .pag-item{display:flex;justify-content:space-between;font-size:10px;color:var(--dim2);padding:3px 0;border-bottom:1px dashed var(--line);}
-    .pag-item span:last-child{color:var(--green);}
+    .pag-item{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:10px;color:var(--dim2);padding:3px 0;border-bottom:1px dashed var(--line);}
+    .pag-item-info{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .pag-item-valor{color:var(--green);white-space:nowrap;}
+    .pag-item-remove{background:none;border:none;color:var(--red);font-size:12px;cursor:pointer;opacity:.6;white-space:nowrap;}
+    .pag-item-remove:hover{opacity:1;}
 
     /* Nova comanda form */
     .form-wrap{padding:22px;}
@@ -763,7 +766,7 @@ function renderDetalhe(id){
   const pagsEl=document.getElementById('pagamentosLista');
   if(c.pagamentos.length>0){
     pagsEl.innerHTML='<div style="font-size:9px;color:var(--dim);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:4px;">Pagamentos registrados</div>'+
-      c.pagamentos.map(p=>`<div class="pag-item"><span>${p.forma.toUpperCase()} · ${new Date(p.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span><span>+ ${fmt(p.valor)}</span></div>`).join('');
+      c.pagamentos.map((p,idx)=>`<div class="pag-item"><span class="pag-item-info">${p.forma.toUpperCase()} · ${new Date(p.ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</span><span class="pag-item-valor">+ ${fmt(p.valor)}</span><button class="pag-item-remove" onclick="removerPagamento('${id}',${idx})" title="Remover pagamento">×</button></div>`).join('');
   }else{
     pagsEl.innerHTML='';
   }
@@ -830,6 +833,17 @@ function registrarParcial(){
   salvarComandas();
   renderDetalhe(comandaAtiva);renderComandas();
   toast(`${fmt(val)} registrado!`,'green');
+}
+
+function removerPagamento(id, idx){
+  const c = comandas[id];
+  if (!c || !c.pagamentos[idx]) return;
+  if (!confirm('Remover este pagamento registrado?')) return;
+  c.pagamentos.splice(idx, 1);
+  salvarComandas();
+  if (comandaAtiva === id) renderDetalhe(id);
+  renderComandas();
+  toast('Pagamento removido','green');
 }
 
 // ── SENHA ADMIN ──
