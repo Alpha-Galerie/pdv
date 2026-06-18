@@ -147,6 +147,16 @@
     .credito-info{margin-top:6px;font-size:10px;color:var(--green);display:none;}
     .debito-info{margin-top:6px;font-size:10px;color:var(--red);display:none;}
 
+    /* Desconto */
+    .desconto-section{margin-top:10px;padding:12px;background:var(--bg3);border:1px solid var(--line2);}
+    .desconto-title{font-size:9px;letter-spacing:0.15em;color:var(--gold2);text-transform:uppercase;margin-bottom:8px;}
+    .desconto-row{display:flex;gap:8px;align-items:center;}
+    .desconto-select,.desconto-input{background:var(--bg);border:1px solid var(--line2);color:var(--text);padding:8px 10px;font-family:'JetBrains Mono',monospace;font-size:12px;}
+    .desconto-select:focus,.desconto-input:focus{outline:none;border-color:var(--gold);}
+    .desconto-select{width:108px;}
+    .desconto-input{flex:1;min-width:0;}
+    .desconto-info{margin-top:6px;font-size:10px;color:var(--gold2);display:none;}
+
     /* Histórico de pagamentos parciais */
     .pagamentos-lista{margin-top:8px;}
     .pag-item{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:10px;color:var(--dim2);padding:3px 0;border-bottom:1px dashed var(--line);}
@@ -262,6 +272,19 @@
       <!-- Resumo financeiro -->
       <div id="resumoFinanceiro"></div>
 
+      <!-- Desconto -->
+      <div class="desconto-section">
+        <div class="desconto-title">Desconto na comanda</div>
+        <div class="desconto-row">
+          <select class="desconto-select" id="descontoTipo" onchange="aplicarDesconto()">
+            <option value="percent">%</option>
+            <option value="valor">Valor</option>
+          </select>
+          <input type="number" class="desconto-input" id="descontoValor" placeholder="0" min="0" step="0.01" oninput="aplicarDesconto()" />
+        </div>
+        <div class="desconto-info" id="descontoInfo"></div>
+      </div>
+
       <!-- Pagamento -->
       <div class="pay-section">
         <div class="pay-label">Fechar comanda — forma de pagamento</div>
@@ -372,7 +395,7 @@ function carregarComandas() {
     if (raw) {
       const parsed = JSON.parse(raw);
       for (const [id, c] of Object.entries(parsed)) {
-        comandas[id] = { ...c, hora: new Date(c.hora) };
+        comandas[id] = { ...c, hora: new Date(c.hora), descontoTipo: c.descontoTipo || 'valor', descontoValor: Number(c.descontoValor) || 0 };
       }
     }
     const active = localStorage.getItem(LS_ACTIVE);
@@ -456,6 +479,13 @@ function calcTotalBalcao() {
   const taxa = taxaPercent > 0 ? arred(sub * (taxaPercent / 100)) : 0;
   const total = sub + taxa;
   return { sub, taxa, total };
+}
+
+function getDesconto(c, base) {
+  const tipo = c.descontoTipo || 'valor';
+  const valor = Math.max(0, Number(c.descontoValor) || 0);
+  const desconto = tipo === 'percent' ? arred(base * (valor / 100)) : arred(valor);
+  return Math.min(desconto, base);
 }
 
 function renderBalcao() {
@@ -576,14 +606,28 @@ function setTaxaPercent(valor){
   if (balcaoAtivo) renderBalcao();
 }
 
+function aplicarDesconto(){
+  if(!comandaAtiva)return;
+  const c = comandas[comandaAtiva];
+  const tipo = document.getElementById('descontoTipo')?.value || 'valor';
+  const valor = Math.max(0, Number(document.getElementById('descontoValor')?.value) || 0);
+  c.descontoTipo = tipo;
+  c.descontoValor = valor;
+  salvarComandas();
+  renderDetalhe(comandaAtiva);
+  renderComandas();
+}
+
 function calcTotal(c){
   const sub=arred(c.itens.reduce((s,i)=>s+i.preco*i.qtd,0));
   const pago=arred(c.pagamentos.reduce((s,p)=>s+p.valor,0));
   const taxa=taxaPercent>0?arred(sub*(taxaPercent/100)):0;
-  const total=sub+taxa;
+  const base=sub+taxa;
+  const desconto=getDesconto(c, base);
+  const total=Math.max(0,base-desconto);
   const restante=Math.max(0,total-pago);
   const credito=Math.max(0,pago-total);
-  return{sub,taxa,total,pago,restante,credito};
+  return{sub,taxa,desconto,total,pago,restante,credito,base};
 }
 
 // ── TOAST ──
@@ -671,7 +715,7 @@ function criarComanda(){
   const nome=document.getElementById('inputNome').value.trim();
   if(!nome){toast('Digite um nome');return;}
   const id='c'+Date.now();
-  comandas[id]={id,nome,hora:new Date(),itens:[],pagamentos:[]};
+  comandas[id]={id,nome,hora:new Date(),itens:[],pagamentos:[],descontoTipo:'valor',descontoValor:0};
   fecharModal('modalNova');
   salvarComandas();
   renderComandas();
@@ -732,7 +776,7 @@ function abrirDetalhe(id){
 
 function renderDetalhe(id){
   const c=comandas[id];
-  const{sub,taxa,total,pago,restante,credito}=calcTotal(c);
+  const{sub,taxa,desconto,total,pago,restante,credito,base}=calcTotal(c);
 
   // Itens
   document.getElementById('mItens').innerHTML=c.itens.length===0
@@ -753,10 +797,23 @@ function renderDetalhe(id){
   let resumo=`<div class="resumo-row"><span>Subtotal</span><span>${fmt(sub)}</span></div>`;
   if(taxaPercent>0)resumo+=`<div class="resumo-row taxa"><span>Taxa de serviço (${taxaPercent}%)</span><span>+ ${fmt(taxa)}</span></div>`;
   else resumo+=`<div class="resumo-row taxa zero"><span>Taxa de serviço (0%)</span><span>${fmt(0)}</span></div>`;
+  if(desconto>0)resumo+=`<div class="resumo-row" style="color:var(--gold2)"><span>Desconto</span><span>− ${fmt(desconto)}</span></div>`;
   if(pago>0)resumo+=`<div class="resumo-row" style="color:var(--green)"><span>Já pago</span><span>− ${fmt(pago)}</span></div>`;
   resumo+=`<div class="resumo-row total"><span>TOTAL</span><span>${fmt(restante>0?restante:total)}</span></div>`;
   if(credito>0)resumo+=`<div style="color:var(--green);font-size:11px;margin-top:4px;">✓ CRÉDITO DO CLIENTE: ${fmt(credito)}</div>`;
   document.getElementById('resumoFinanceiro').innerHTML=resumo;
+
+  const descontoTipoEl = document.getElementById('descontoTipo');
+  const descontoValorEl = document.getElementById('descontoValor');
+  const descontoInfoEl = document.getElementById('descontoInfo');
+  if (descontoTipoEl && descontoValorEl && descontoInfoEl) {
+    descontoTipoEl.value = c.descontoTipo || 'valor';
+    descontoValorEl.value = String(c.descontoValor || 0);
+    descontoInfoEl.style.display = (c.descontoValor || 0) > 0 ? 'block' : 'none';
+    descontoInfoEl.textContent = (c.descontoValor || 0) > 0
+      ? `${c.descontoTipo === 'percent' ? 'Desconto percentual' : 'Desconto em valor'} aplicado sobre ${fmt(base)}`
+      : '';
+  }
 
   const podeExcluir = c.itens.length === 0 && c.pagamentos.length === 0;
   const btnExcluir = document.getElementById('btnExcluirComanda');
@@ -859,7 +916,7 @@ function pedirSenha(callback) {
 function fecharComanda(forma) {
   const c = comandas[comandaAtiva];
   if (!c || !c.itens.length) { toast('Comanda vazia!'); return; }
-  const {sub,taxa,total,pago,restante,credito} = calcTotal(c);
+  const {sub,taxa,desconto,total,pago,restante,credito} = calcTotal(c);
   const valorFinal = arred(restante > 0 ? restante : total);
 
   if (forma === 'pix') {
@@ -962,12 +1019,13 @@ function confirmarPixPdv(){
 // ── CONFIRMAR E FECHAR ──
 async function confirmarFechamento(forma, valorOverride) {
   const c = comandas[comandaAtiva];
-  const {sub,taxa,total,pago,restante,credito} = calcTotal(c);
+  const {sub,taxa,desconto,total,pago,restante,credito} = calcTotal(c);
   const valorFinal = valorOverride || arred(restante > 0 ? restante : total);
   const numPedido = 'PDV'+Date.now().toString().slice(-8);
 
   let obs = 'PDV · Club Alpha · '+forma.toUpperCase();
   if(taxaPercent > 0) obs += ` · Taxa ${taxaPercent}%: ${fmt(arred(taxa))}`;
+  if(desconto>0) obs += ` · Desconto: ${fmt(arred(desconto))}`;
   if(pago>0) obs += ` · Pago anteriormente: ${fmt(arred(pago))}`;
   if(credito>0) obs += ` · CRÉDITO: ${fmt(arred(credito))}`;
 
