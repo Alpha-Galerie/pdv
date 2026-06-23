@@ -287,12 +287,13 @@
 
       <!-- Pagamento -->
       <div class="pay-section">
-        <div class="pay-label">Fechar comanda — forma de pagamento</div>
+        <div class="pay-label">Finalizar comanda — escolha a forma de fechamento</div>
         <div class="pay-btns">
-          <button class="btn-pay pix" onclick="fecharComanda('pix')">◆ PIX</button>
-          <button class="btn-pay" onclick="fecharComanda('cartao')">▣ CARTÃO</button>
-          <button class="btn-pay" onclick="fecharComanda('dinheiro')">$ DINHEIRO</button>
+          <button class="btn-pay pix" onclick="fecharComanda('pix')">◆ FINALIZAR COM PIX</button>
+          <button class="btn-pay" onclick="fecharComanda('cartao')">▣ FINALIZAR NO CARTÃO</button>
+          <button class="btn-pay" onclick="fecharComanda('dinheiro')">$ FINALIZAR NO DINHEIRO</button>
         </div>
+        <div style="font-size:9px;color:var(--dim);margin-top:6px;line-height:1.4;">Se já houver pagamentos parciais suficientes para quitar a conta, o sistema finaliza direto no Pix.</div>
       </div>
 
       <button class="btn-excluir" id="btnExcluirComanda" onclick="excluirComandaAtual()" style="display:none;">Excluir comanda vazia</button>
@@ -919,6 +920,12 @@ function fecharComanda(forma) {
   const {sub,taxa,desconto,total,pago,restante,credito} = calcTotal(c);
   const valorFinal = arred(restante > 0 ? restante : total);
 
+  if (restante <= 0) {
+    toast('Comanda já quitada. Finalizando no Pix...', 'green');
+    pedirSenha(() => confirmarFechamento('pix', 0, true));
+    return;
+  }
+
   if (forma === 'pix') {
     mostrarPagamentoPix(valorFinal);
   } else {
@@ -930,10 +937,10 @@ function fecharComanda(forma) {
 function mostrarConfirmacaoPagamento(forma, valor) {
   const c = comandas[comandaAtiva];
   const icone = forma === 'cartao' ? '💳' : '💵';
-  const titulo = forma === 'cartao' ? 'Pagamento com Cartão' : 'Pagamento em Dinheiro';
+  const titulo = forma === 'cartao' ? 'Finalizar com Cartão' : 'Finalizar no Dinheiro';
   const instrucao = forma === 'cartao'
     ? 'Passe o cartão do cliente no seu app ou maquininha agora.\n\nApós confirmar o pagamento no seu sistema, volte aqui e insira a senha para fechar.'
-    : 'Receba o dinheiro do cliente agora.\n\nApós confirmar, insira a senha para fechar a comanda.';
+    : 'Receba o dinheiro do cliente agora.\n\nApós confirmar, insira a senha para finalizar a comanda.';
 
   const overlay = document.createElement('div');
   overlay.id = 'modalConfirmPag';
@@ -945,8 +952,8 @@ function mostrarConfirmacaoPagamento(forma, valor) {
       <div style="font-family:Cormorant Garamond,serif;font-size:40px;color:#c9a961;margin-bottom:16px;">${fmt(valor)}</div>
       <p style="font-size:13px;color:#888;line-height:1.6;margin-bottom:24px;">${instrucao}</p>
       <div style="display:flex;gap:10px;">
-        <button onclick="document.getElementById('modalConfirmPag').remove()" style="flex:1;padding:14px;background:#1a1a1a;color:#888;border:1px solid #333;font-family:JetBrains Mono,monospace;font-size:10px;cursor:pointer;letter-spacing:.1em;">CANCELAR</button>
-        <button onclick="confirmarPagamentoFisico('${forma}',${valor})" style="flex:1;padding:14px;background:#c9a961;color:#000;border:none;font-family:JetBrains Mono,monospace;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.1em;">✓ CONFIRMAR PAGO</button>
+        <button onclick="document.getElementById('modalConfirmPag').remove()" style="flex:1;padding:14px;background:#1a1a1a;color:#888;border:1px solid #333;font-family:JetBrains Mono,monospace;font-size:10px;cursor:pointer;letter-spacing:.1em;">VOLTAR</button>
+        <button onclick="confirmarPagamentoFisico('${forma}',${valor})" style="flex:1;padding:14px;background:#c9a961;color:#000;border:none;font-family:JetBrains Mono,monospace;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.1em;">✓ FINALIZAR</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -979,7 +986,7 @@ function mostrarPagamentoPix(valor) {
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.9);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;';
   overlay.innerHTML = `
     <div style="background:#111;border:1px solid #c9a961;max-width:380px;width:100%;padding:24px;text-align:center;">
-      <div style="font-family:Cormorant Garamond,serif;font-size:22px;color:#c9a961;margin-bottom:4px;">Pix · <em>${c.nome}</em></div>
+      <div style="font-family:Cormorant Garamond,serif;font-size:22px;color:#c9a961;margin-bottom:4px;">Finalizar no Pix · <em>${c.nome}</em></div>
       <div style="font-family:Cormorant Garamond,serif;font-size:36px;color:#c9a961;margin-bottom:16px;">${fmt(valor)}</div>
       <canvas id="qrPdv" style="background:#fff;padding:8px;"></canvas>
       <div style="margin:12px 0;font-size:11px;color:#666;">Ou copie a chave:</div>
@@ -989,7 +996,7 @@ function mostrarPagamentoPix(valor) {
       </div>
       <div style="display:flex;gap:8px;">
         <button onclick="enviarWhatsAppPdv('${c.nome}',${valor},'${payload}')" style="flex:1;padding:12px;background:#25D366;color:#000;border:none;font-family:JetBrains Mono,monospace;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.1em;">📲 WHATSAPP</button>
-        <button onclick="confirmarPixPdv()" style="flex:1;padding:12px;background:#4ade80;color:#000;border:none;font-family:JetBrains Mono,monospace;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.1em;">✓ PAGO</button>
+        <button onclick="confirmarPixPdv()" style="flex:1;padding:12px;background:#4ade80;color:#000;border:none;font-family:JetBrains Mono,monospace;font-size:10px;font-weight:700;cursor:pointer;letter-spacing:.1em;">✓ FINALIZAR</button>
         <button onclick="document.getElementById('modalPixPdv').remove()" style="padding:12px 16px;background:#222;color:#888;border:1px solid #333;font-family:JetBrains Mono,monospace;font-size:10px;cursor:pointer;">×</button>
       </div>
     </div>`;
@@ -1017,13 +1024,16 @@ function confirmarPixPdv(){
 }
 
 // ── CONFIRMAR E FECHAR ──
-async function confirmarFechamento(forma, valorOverride) {
+async function confirmarFechamento(forma, valorOverride, viaParciais = false) {
   const c = comandas[comandaAtiva];
   const {sub,taxa,desconto,total,pago,restante,credito} = calcTotal(c);
-  const valorFinal = valorOverride || arred(restante > 0 ? restante : total);
+  const valorFinal = valorOverride !== undefined ? valorOverride : arred(restante > 0 ? restante : total);
   const numPedido = 'PDV'+Date.now().toString().slice(-8);
 
   let obs = 'PDV · Club Alpha · '+forma.toUpperCase();
+  if (viaParciais && restante <= 0 && c.pagamentos.length > 0) {
+    obs = 'PDV · Club Alpha · PAGO POR PAGAMENTOS PARCIAIS';
+  }
   if(taxaPercent > 0) obs += ` · Taxa ${taxaPercent}%: ${fmt(arred(taxa))}`;
   if(desconto>0) obs += ` · Desconto: ${fmt(arred(desconto))}`;
   if(pago>0) obs += ` · Pago anteriormente: ${fmt(arred(pago))}`;
@@ -1062,7 +1072,11 @@ async function confirmarFechamento(forma, valorOverride) {
   }
 
   if(sucesso){
-    const msg = credito > 0
+    const msg = viaParciais && restante <= 0 && c.pagamentos.length > 0
+      ? `✓ ${c.nome} · Finalizada pelos pagamentos parciais`
+      : restante <= 0 && pago >= total && credito === 0
+      ? `✓ ${c.nome} · Comanda já quitada`
+      : credito > 0
       ? `✓ ${c.nome} · ${fmt(arred(total))} · Crédito: ${fmt(arred(credito))}`
       : `✓ ${c.nome} · ${fmt(valorFinal)} · ${forma.toUpperCase()}`;
 
